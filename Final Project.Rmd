@@ -1,0 +1,153 @@
+---
+title: "Final"
+output: html_document
+---
+# Introduction
+
+The project I am exploring is trying to analyze the distribution of the types of crimes committed in Chicago. This analysis can help determine what types of crimes are most common. Using this information we can then enact policies that target these particular crimes. The data set we will use contains data about crimes in Chicago starting from 2001. This may be too broad so we will focus on data from years 2013 to 2018. And from this we will attempt to predict the distributions of crimes in year 2019.
+
+I acquired this data from the link listed below:
+https://catalog.data.gov/dataset/crimes-2001-to-present-398a4 
+
+In determining the accuracy and legitimacy of data, it is important to look at the sources. My particular data is acquired from the government and published as an open source data set. It was provided by the Chicago Police Department's  Citizen Law Enforcement Analysis and Reporting system. So it is indeed a reliable source of data in regards to crimes in Chicago.
+
+# Data Extraction
+To start, I will extract the csv file provided in the link above and assign it to a variable dt.
+
+```{r}
+library(tidyverse)
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(ISLR)
+library(broom)
+```
+
+```{r}
+# I will leave this chunk of code separate from the rest because it takes a while to process such a large csv file
+dt <- read_csv("C:/Users/Elin/Documents/CMSC 320/Crimes_2001_to_Present_Chicago.csv")
+dt
+
+```
+Each row of the table displayed above is an *entity* and each column is an *attribute value* for that entity. This is all encapsulated by the variable dt which is a rectangular dataset, *data.frame*. 
+
+Each row displays a case of crime. This means our entities would be each case of crime. And then the attribute values describe each entity. In this case it would be like the case number, date, type of crime, etc. 
+
+#Cleaning Up Data
+Since we are looking to find distribution of the types of crime. Lets clean up the data and remove some unnecessary attribute values. We can do this by using a pipeline (%>%) which transforms one data frame into another. We will then use *select* based on attributes.
+
+```{r}
+dt <- dt %>%
+  select(`Case Number`, Date,`Primary Type`, Description, Latitude, Longitude)
+dt
+```
+
+However we have a problem. There are still over 6.8 million entities in our dataset. This isn't exactly necessary for us so lets try cutting it down to to the past 5 years instead of from 2001. And since data from the year 2019 is incomplete lets only consider data from 2014 to 2018.
+
+To do this we would need to use *filter* which will select entities based on attribute value. Which in our case would be year. The code to get this attribute value from the date is listed below. 
+```{r}
+# Extract year from Date
+# An option would be to convert to datetime object however it takes more computation power to do that so
+# I used just the str_extract method. Which my laptop was able to handle better.
+dt$Year <- str_extract(dt$Date,"[0-9]{4}")
+dt
+```
+Next we filter based on year.
+
+```{r}
+dt <- dt %>%
+  filter(Year >= 2013 & Year <= 2018)
+dt
+```
+Our data is now cut down to 1.6 million is a still a large sum but more manageable. We now will omit entities with missing values or NA's for attributes values. Other options to handle missing data may be to imputation for numerical values which involves just inputting the mean of range of values in place of NA. However we won't do that. The amount of entities with missing values is neglible to the total sum of entities we have.
+
+```{r}
+na.omit(dt)
+```
+
+#Data Transformation and Visualization
+Now that we orangized and sorted the data. Lets convert into a more usuable and readable form. 
+
+We want to know the distributions between each type. So lets start by finding out the number of occurences for each type of crime.
+```{r}
+crimeCounts <- dt %>%
+  count(`Primary Type`, sort=TRUE) %>%
+  mutate(Percentage = round((n/sum(n))*100,digits = 5))
+crimeCounts
+
+```
+There's quite of lot of different types of crime. In fact 33 different types. It would be quite difficult analyze so many different types so lets focus on the top 5.
+This would also make visualization easier.
+
+```{r}
+crimeCounts <- crimeCounts %>% 
+  slice(1:5)
+crimeCounts
+  
+```
+Now lets also make sure our data frame only reflects those cases with the top 5 types of crime.
+
+```{r}
+top5dt <- dt %>%
+  filter(`Primary Type` %in% c("THEFT", "BATTERY", "CRIMINAL DAMAGE", "NARCOTICS", "ASSAULT"))
+top5dt
+```
+We will now try to visualize the data through a graph. A pie chart here would work well with displaying percentages. A source to learn more about displays using pie charts can be found here :http://www.datasciencemadesimple.com/r-pie-chart/.
+
+```{r include=TRUE}
+#First need to reassign percent values
+crimeCounts <- crimeCounts %>%
+  mutate(Percentage = round((n/sum(n))*100,digits = 5))
+crimeCounts
+
+lbls <- paste(crimeCounts$`Primary Type`, crimeCounts$Percentage)
+lbls <- paste(lbls, "%", sep="")
+
+# Plot the chart
+pie(crimeCounts$n,labels = lbls, col=rainbow(length(lbls)),main="Top 5 Crimes", cex = 0.8)
+legend("topright",crimeCounts$`Primary Type`, cex=0.63,fill=rainbow(length(lbls)))
+
+```
+
+Now lets see a histogram of these types.
+```{r}
+crimeCounts %>%
+   ggplot(aes(x=`Primary Type`, y=Percentage)) +
+    geom_bar(stat='identity')
+```
+
+Now that we see how the overall distributions for the 5 crimes are. Lets see how it is year by year and see if there are any changes.
+```{r}
+
+top5dt 
+top5dtmod <- top5dt %>%
+  arrange(desc(`Primary Type`)) %>%
+  group_by(Year) %>%
+  count(`Primary Type`) 
+  
+
+top5dtmod <- top5dtmod %>%
+  group_by(Year) %>%
+  mutate(Percentage = round((n/sum(n))*100,digits = 5))
+
+top5dtmod %>%
+  ggplot(mapping=aes(x=`Primary Type`, y=Percentage)) +
+  geom_bar(stat='identity') +
+  facet_wrap(~Year, scales= "free") +
+   theme(axis.text.x = element_text(angle=90, vjust=0.5))
+```
+
+#Linear Regression
+Looking at the year by year break downs it does seem the distributions of crimes in regards to narcostics have decreased. Now can we take this further and try predicting distributions of each type of crime. We can do this by referencing the total percentage to year and type.
+
+```{r}
+fit <- lm(formula = Percentage~`Primary Type`+Year, data = top5dtmod)
+
+tidy(fit)
+
+```
+
+#Conclusion
+Assualt has a typical distribution of 10.14% from the top 5 crimes.
+Battery has usually a 27.63% distribution. Criminal damage has usually a 16.06% distribution. Narcotics usually have a 11.25% distribution. And theft usually has a 34.62% distribution.
